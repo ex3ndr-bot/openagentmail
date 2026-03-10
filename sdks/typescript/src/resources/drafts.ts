@@ -19,15 +19,6 @@ export class DraftsClient {
 
   /**
    * Create a new draft
-   * 
-   * @example
-   * ```typescript
-   * const draft = await client.drafts.create('inbox_abc123', {
-   *   to: ['user@example.com'],
-   *   subject: 'Draft email',
-   *   text: 'This is a draft.'
-   * });
-   * ```
    */
   async create(inboxId: string, params: CreateDraftParams = {}): Promise<Draft> {
     return this.http.post<Draft>(`/inboxes/${inboxId}/drafts`, params);
@@ -35,11 +26,6 @@ export class DraftsClient {
 
   /**
    * Get a draft by ID
-   * 
-   * @example
-   * ```typescript
-   * const draft = await client.drafts.get('inbox_abc123', 'draft_xyz789');
-   * ```
    */
   async get(inboxId: string, draftId: string): Promise<Draft> {
     return this.http.get<Draft>(`/inboxes/${inboxId}/drafts/${draftId}`);
@@ -47,14 +33,6 @@ export class DraftsClient {
 
   /**
    * Update a draft
-   * 
-   * @example
-   * ```typescript
-   * const draft = await client.drafts.update('inbox_abc123', 'draft_xyz789', {
-   *   subject: 'Updated subject',
-   *   text: 'Updated content'
-   * });
-   * ```
    */
   async update(inboxId: string, draftId: string, params: UpdateDraftParams): Promise<Draft> {
     return this.http.patch<Draft>(`/inboxes/${inboxId}/drafts/${draftId}`, params);
@@ -62,11 +40,6 @@ export class DraftsClient {
 
   /**
    * Delete a draft
-   * 
-   * @example
-   * ```typescript
-   * await client.drafts.delete('inbox_abc123', 'draft_xyz789');
-   * ```
    */
   async delete(inboxId: string, draftId: string): Promise<void> {
     return this.http.delete(`/inboxes/${inboxId}/drafts/${draftId}`);
@@ -74,11 +47,6 @@ export class DraftsClient {
 
   /**
    * Send a draft immediately
-   * 
-   * @example
-   * ```typescript
-   * const message = await client.drafts.send('inbox_abc123', 'draft_xyz789');
-   * ```
    */
   async send(inboxId: string, draftId: string): Promise<Message> {
     return this.http.post<Message>(`/inboxes/${inboxId}/drafts/${draftId}/send`);
@@ -86,17 +54,6 @@ export class DraftsClient {
 
   /**
    * List drafts in an inbox with auto-pagination
-   * 
-   * @example
-   * ```typescript
-   * // Get first page
-   * const { items, hasMore } = await client.drafts.listPage('inbox_abc123', { limit: 10 });
-   * 
-   * // Auto-paginate through all drafts
-   * for await (const draft of client.drafts.list('inbox_abc123')) {
-   *   console.log(draft.subject);
-   * }
-   * ```
    */
   list(inboxId: string, params: PaginationParams = {}): PageIterator<Draft> {
     return paginate(
@@ -109,6 +66,10 @@ export class DraftsClient {
    * List a single page of drafts
    */
   async listPage(inboxId: string, params: PaginationParams = {}): Promise<PaginatedResponse<Draft>> {
-    return this.http.get<PaginatedResponse<Draft>>(`/inboxes/${inboxId}/drafts`, params);
+    const { limit, pageToken } = params;
+    return this.http.get<PaginatedResponse<Draft>>(`/inboxes/${inboxId}/drafts`, {
+      limit,
+      pageToken,
+    });
   }
 }

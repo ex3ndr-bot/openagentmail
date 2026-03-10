@@ -18,14 +18,6 @@ export class PodsClient {
 
   /**
    * Create a new pod
-   * 
-   * @example
-   * ```typescript
-   * const pod = await client.pods.create({
-   *   name: 'Production',
-   *   clientId: 'my-unique-id'
-   * });
-   * ```
    */
   async create(params: CreatePodParams): Promise<Pod> {
     return this.http.post<Pod>('/pods', params);
@@ -33,11 +25,6 @@ export class PodsClient {
 
   /**
    * Get a pod by ID
-   * 
-   * @example
-   * ```typescript
-   * const pod = await client.pods.get('pod_xyz789');
-   * ```
    */
   async get(podId: string): Promise<Pod> {
     return this.http.get<Pod>(`/pods/${podId}`);
@@ -45,13 +32,6 @@ export class PodsClient {
 
   /**
    * Update a pod
-   * 
-   * @example
-   * ```typescript
-   * const pod = await client.pods.update('pod_xyz789', {
-   *   name: 'New Pod Name'
-   * });
-   * ```
    */
   async update(podId: string, params: UpdatePodParams): Promise<Pod> {
     return this.http.patch<Pod>(`/pods/${podId}`, params);
@@ -59,11 +39,6 @@ export class PodsClient {
 
   /**
    * Delete a pod
-   * 
-   * @example
-   * ```typescript
-   * await client.pods.delete('pod_xyz789');
-   * ```
    */
   async delete(podId: string): Promise<void> {
     return this.http.delete(`/pods/${podId}`);
@@ -71,17 +46,6 @@ export class PodsClient {
 
   /**
    * List pods with auto-pagination
-   * 
-   * @example
-   * ```typescript
-   * // Get first page
-   * const { items, hasMore } = await client.pods.listPage({ limit: 10 });
-   * 
-   * // Auto-paginate through all pods
-   * for await (const pod of client.pods.list()) {
-   *   console.log(pod.name);
-   * }
-   * ```
    */
   list(params: PaginationParams = {}): PageIterator<Pod> {
     return paginate(
@@ -94,6 +58,10 @@ export class PodsClient {
    * List a single page of pods
    */
   async listPage(params: PaginationParams = {}): Promise<PaginatedResponse<Pod>> {
-    return this.http.get<PaginatedResponse<Pod>>('/pods', params);
+    const { limit, pageToken } = params;
+    return this.http.get<PaginatedResponse<Pod>>('/pods', {
+      limit,
+      pageToken,
+    });
   }
 }

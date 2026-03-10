@@ -102,7 +102,13 @@ export class MessagesClient {
    * List a single page of messages
    */
   async listPage(inboxId: string, params: ListMessagesParams = {}): Promise<PaginatedResponse<Message>> {
-    return this.http.get<PaginatedResponse<Message>>(`/inboxes/${inboxId}/messages`, params);
+    const { label, threadId, limit, pageToken } = params;
+    return this.http.get<PaginatedResponse<Message>>(`/inboxes/${inboxId}/messages`, {
+      label,
+      threadId,
+      limit,
+      pageToken,
+    });
   }
 
   /**

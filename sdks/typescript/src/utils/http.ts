@@ -1,6 +1,6 @@
 // HTTP Client Wrapper for OpenAgentMail
 
-import type { OpenAgentMailConfig, RequestOptions, ApiErrorResponse } from '../types.js';
+import type { OpenAgentMailConfig, ApiErrorResponse } from '../types.js';
 import {
   APIError,
   BadRequestError,
@@ -78,10 +78,14 @@ export function transformResponseBody<T>(obj: unknown): T {
   return obj as T;
 }
 
+/** Query parameter types */
+type QueryValue = string | number | boolean | undefined;
+type QueryParams = Record<string, QueryValue>;
+
 /**
  * Build query string from parameters
  */
-function buildQueryString(params: Record<string, string | number | boolean | undefined>): string {
+function buildQueryString(params: QueryParams): string {
   const searchParams = new URLSearchParams();
   
   for (const [key, value] of Object.entries(params)) {
@@ -92,6 +96,14 @@ function buildQueryString(params: Record<string, string | number | boolean | und
   
   const queryString = searchParams.toString();
   return queryString ? `?${queryString}` : '';
+}
+
+/** Request options */
+interface RequestOptions {
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  path: string;
+  body?: unknown;
+  query?: QueryParams;
 }
 
 /**
@@ -215,7 +227,7 @@ export class HttpClient {
   /**
    * Make a GET request
    */
-  get<T>(path: string, query?: Record<string, string | number | boolean | undefined>): Promise<T> {
+  get<T>(path: string, query?: QueryParams): Promise<T> {
     return this.request<T>({ method: 'GET', path, query });
   }
 

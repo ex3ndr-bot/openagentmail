@@ -76,7 +76,7 @@ export class InboxesClient {
    * @example
    * ```typescript
    * // Get first page
-   * const { items, hasMore } = await client.inboxes.list({ limit: 10 });
+   * const { items, hasMore } = await client.inboxes.listPage({ limit: 10 });
    * 
    * // Auto-paginate through all inboxes
    * for await (const inbox of client.inboxes.list()) {
@@ -95,6 +95,11 @@ export class InboxesClient {
    * List a single page of inboxes
    */
   async listPage(params: ListInboxesParams = {}): Promise<PaginatedResponse<Inbox>> {
-    return this.http.get<PaginatedResponse<Inbox>>('/inboxes', params);
+    const { podId, limit, pageToken } = params;
+    return this.http.get<PaginatedResponse<Inbox>>('/inboxes', {
+      podId,
+      limit,
+      pageToken,
+    });
   }
 }

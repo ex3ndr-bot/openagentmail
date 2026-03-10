@@ -1,0 +1,17 @@
+# Source files (use dist/ for published package)
+src/
+examples/
+tsconfig.json
+tsup.config.ts
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+
+# Test
+coverage/
+*.test.ts
+
+# Development
+.env
