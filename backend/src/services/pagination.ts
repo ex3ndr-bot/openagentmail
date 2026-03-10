@@ -37,10 +37,10 @@ export function getPaginationParams(options: PaginationOptions) {
 
 export function formatPaginatedResponse<T extends { id: string; createdAt?: Date }>(
   items: T[],
-  requestedLimit: number,
+  requestedLimit: number | undefined,
   formatItem: (item: T) => unknown
 ) {
-  const limit = Math.min(requestedLimit || config.pagination.defaultLimit, config.pagination.maxLimit);
+  const limit = Math.min(requestedLimit ?? config.pagination.defaultLimit, config.pagination.maxLimit);
   const hasMore = items.length > limit;
   const resultItems = items.slice(0, limit);
 
