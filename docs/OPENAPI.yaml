@@ -1,0 +1,1433 @@
+openapi: 3.1.0
+info:
+  title: OpenAgentMail API
+  description: |
+    Email API for AI agents. Create inboxes, send and receive email, and react to events in real-time.
+    
+    ## Authentication
+    All endpoints require a Bearer token in the Authorization header:
+    ```
+    Authorization: Bearer <your_api_key>
+    ```
+    
+    ## Pagination
+    List endpoints use cursor-based pagination with `limit` and `page_token` parameters.
+    
+    ## Idempotency
+    Use `client_id` to make POST requests idempotent.
+  version: 0.1.0
+  contact:
+    name: OpenAgentMail
+    url: https://github.com/openagentmail
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.openagentmail.com/v0
+    description: Production
+  - url: http://localhost:3000/v0
+    description: Local development
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Organization
+    description: Organization management
+  - name: Pods
+    description: Multi-tenant isolation units
+  - name: Inboxes
+    description: Email accounts for agents
+  - name: Messages
+    description: Send and receive emails
+  - name: Drafts
+    description: Unsent email drafts
+  - name: Webhooks
+    description: Real-time event notifications
+  - name: Domains
+    description: Custom sending domains
+
+paths:
+  /organization:
+    get:
+      tags: [Organization]
+      summary: Get organization
+      description: Retrieve details about your organization
+      operationId: getOrganization
+      responses:
+        "200":
+          description: Organization details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Organization"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /pods:
+    get:
+      tags: [Pods]
+      summary: List pods
+      operationId: listPods
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/pageToken"
+      responses:
+        "200":
+          description: List of pods
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PodList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Pods]
+      summary: Create pod
+      operationId: createPod
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePodRequest"
+      responses:
+        "201":
+          description: Pod created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pod"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /pods/{pod_id}:
+    get:
+      tags: [Pods]
+      summary: Get pod
+      operationId: getPod
+      parameters:
+        - $ref: "#/components/parameters/podId"
+      responses:
+        "200":
+          description: Pod details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pod"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /inboxes:
+    get:
+      tags: [Inboxes]
+      summary: List inboxes
+      operationId: listInboxes
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/pageToken"
+      responses:
+        "200":
+          description: List of inboxes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InboxList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Inboxes]
+      summary: Create inbox
+      operationId: createInbox
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInboxRequest"
+      responses:
+        "201":
+          description: Inbox created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Inbox"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /inboxes/{inbox_id}:
+    get:
+      tags: [Inboxes]
+      summary: Get inbox
+      operationId: getInbox
+      parameters:
+        - $ref: "#/components/parameters/inboxId"
+      responses:
+        "200":
+          description: Inbox details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Inbox"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Inboxes]
+      summary: Delete inbox
+      operationId: deleteInbox
+      parameters:
+        - $ref: "#/components/parameters/inboxId"
+      responses:
+        "204":
+          description: Inbox deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /pods/{pod_id}/inboxes:
+    get:
+      tags: [Inboxes]
+      summary: List inboxes in pod
+      operationId: listPodInboxes
+      parameters:
+        - $ref: "#/components/parameters/podId"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/pageToken"
+      responses:
+        "200":
+          description: List of inboxes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InboxList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Inboxes]
+      summary: Create inbox in pod
+      operationId: createPodInbox
+      parameters:
+        - $ref: "#/components/parameters/podId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInboxRequest"
+      responses:
+        "201":
+          description: Inbox created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Inbox"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /pods/{pod_id}/inboxes/{inbox_id}:
+    get:
+      tags: [Inboxes]
+      summary: Get inbox in pod
+      operationId: getPodInbox
+      parameters:
+        - $ref: "#/components/parameters/podId"
+        - $ref: "#/components/parameters/inboxId"
+      responses:
+        "200":
+          description: Inbox details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Inbox"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /inboxes/{inbox_id}/messages:
+    get:
+      tags: [Messages]
+      summary: List messages
+      operationId: listMessages
+      parameters:
+        - $ref: "#/components/parameters/inboxId"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/pageToken"
+        - name: thread_id
+          in: query
+          schema:
+            type: string
+          description: Filter by thread
+        - name: label
+          in: query
+          schema:
+            type: string
+          description: Filter by label
+      responses:
+        "200":
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Messages]
+      summary: Send message
+      operationId: sendMessage
+      parameters:
+        - $ref: "#/components/parameters/inboxId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendMessageRequest"
+      responses:
+        "201":
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /inboxes/{inbox_id}/messages/{message_id}:
+    get:
+      tags: [Messages]
+      summary: Get message
+      operationId: getMessage
+      parameters:
+        - $ref: "#/components/parameters/inboxId"
+        - $ref: "#/components/parameters/messageId"
+      responses:
+        "200":
+          description: Message details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Messages]
+      summary: Delete message
+      operationId: deleteMessage
+      parameters:
+        - $ref: "#/components/parameters/inboxId"
+        - $ref: "#/components/parameters/messageId"
+      responses:
+        "204":
+          description: Message deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /inboxes/{inbox_id}/messages/{message_id}/reply:
+    post:
+      tags: [Messages]
+      summary: Reply to message
+      operationId: replyToMessage
+      parameters:
+        - $ref: "#/components/parameters/inboxId"
+        - $ref: "#/components/parameters/messageId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplyMessageRequest"
+      responses:
+        "201":
+          description: Reply sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /inboxes/{inbox_id}/messages/{message_id}/reply-all:
+    post:
+      tags: [Messages]
+      summary: Reply all to message
+      operationId: replyAllToMessage
+      parameters:
+        - $ref: "#/components/parameters/inboxId"
+        - $ref: "#/components/parameters/messageId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplyMessageRequest"
+      responses:
+        "201":
+          description: Reply sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /inboxes/{inbox_id}/drafts:
+    get:
+      tags: [Drafts]
+      summary: List drafts
+      operationId: listDrafts
+      parameters:
+        - $ref: "#/components/parameters/inboxId"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/pageToken"
+      responses:
+        "200":
+          description: List of drafts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DraftList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Drafts]
+      summary: Create draft
+      operationId: createDraft
+      parameters:
+        - $ref: "#/components/parameters/inboxId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDraftRequest"
+      responses:
+        "201":
+          description: Draft created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Draft"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /inboxes/{inbox_id}/drafts/{draft_id}:
+    get:
+      tags: [Drafts]
+      summary: Get draft
+      operationId: getDraft
+      parameters:
+        - $ref: "#/components/parameters/inboxId"
+        - $ref: "#/components/parameters/draftId"
+      responses:
+        "200":
+          description: Draft details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Draft"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [Drafts]
+      summary: Update draft
+      operationId: updateDraft
+      parameters:
+        - $ref: "#/components/parameters/inboxId"
+        - $ref: "#/components/parameters/draftId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDraftRequest"
+      responses:
+        "200":
+          description: Draft updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Draft"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Drafts]
+      summary: Delete draft
+      operationId: deleteDraft
+      parameters:
+        - $ref: "#/components/parameters/inboxId"
+        - $ref: "#/components/parameters/draftId"
+      responses:
+        "204":
+          description: Draft deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /inboxes/{inbox_id}/drafts/{draft_id}/send:
+    post:
+      tags: [Drafts]
+      summary: Send draft
+      operationId: sendDraft
+      parameters:
+        - $ref: "#/components/parameters/inboxId"
+        - $ref: "#/components/parameters/draftId"
+      responses:
+        "200":
+          description: Draft sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /webhooks:
+    get:
+      tags: [Webhooks]
+      summary: List webhooks
+      operationId: listWebhooks
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/pageToken"
+      responses:
+        "200":
+          description: List of webhooks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Webhooks]
+      summary: Create webhook
+      operationId: createWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWebhookRequest"
+      responses:
+        "201":
+          description: Webhook created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Webhook"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /webhooks/{webhook_id}:
+    get:
+      tags: [Webhooks]
+      summary: Get webhook
+      operationId: getWebhook
+      parameters:
+        - $ref: "#/components/parameters/webhookId"
+      responses:
+        "200":
+          description: Webhook details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Webhook"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [Webhooks]
+      summary: Update webhook
+      operationId: updateWebhook
+      parameters:
+        - $ref: "#/components/parameters/webhookId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWebhookRequest"
+      responses:
+        "200":
+          description: Webhook updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Webhook"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Webhooks]
+      summary: Delete webhook
+      operationId: deleteWebhook
+      parameters:
+        - $ref: "#/components/parameters/webhookId"
+      responses:
+        "204":
+          description: Webhook deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /domains:
+    get:
+      tags: [Domains]
+      summary: List domains
+      operationId: listDomains
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/pageToken"
+      responses:
+        "200":
+          description: List of domains
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Domains]
+      summary: Add domain
+      operationId: addDomain
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddDomainRequest"
+      responses:
+        "201":
+          description: Domain added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Domain"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /domains/{domain_id}:
+    get:
+      tags: [Domains]
+      summary: Get domain
+      operationId: getDomain
+      parameters:
+        - $ref: "#/components/parameters/domainId"
+      responses:
+        "200":
+          description: Domain details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Domain"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Domains]
+      summary: Remove domain
+      operationId: removeDomain
+      parameters:
+        - $ref: "#/components/parameters/domainId"
+      responses:
+        "204":
+          description: Domain removed
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API Key
+      description: "API key in format: oam_xxxxxxxx"
+
+  parameters:
+    limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Number of items per page
+    pageToken:
+      name: page_token
+      in: query
+      schema:
+        type: string
+      description: Pagination cursor
+    podId:
+      name: pod_id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Pod identifier
+    inboxId:
+      name: inbox_id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Inbox identifier
+    messageId:
+      name: message_id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Message identifier
+    draftId:
+      name: draft_id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Draft identifier
+    webhookId:
+      name: webhook_id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Webhook identifier
+    domainId:
+      name: domain_id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Domain identifier
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: Conflict (duplicate client_id)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum:
+                - invalid_request
+                - validation_error
+                - authentication_error
+                - authorization_error
+                - not_found
+                - conflict
+                - rate_limit_exceeded
+                - internal_error
+            message:
+              type: string
+            details:
+              type: object
+
+    Organization:
+      type: object
+      required: [organization_id, name, plan, created_at]
+      properties:
+        organization_id:
+          type: string
+        name:
+          type: string
+        plan:
+          type: string
+          enum: [free, pro, enterprise]
+        created_at:
+          type: string
+          format: date-time
+
+    Pod:
+      type: object
+      required: [pod_id, name, created_at, updated_at]
+      properties:
+        pod_id:
+          type: string
+        name:
+          type: string
+        client_id:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PodList:
+      type: object
+      required: [items, has_more]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Pod"
+        next_page_token:
+          type: string
+          nullable: true
+        has_more:
+          type: boolean
+
+    CreatePodRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        client_id:
+          type: string
+          maxLength: 255
+
+    Inbox:
+      type: object
+      required: [inbox_id, pod_id, username, domain, email, created_at, updated_at]
+      properties:
+        inbox_id:
+          type: string
+        pod_id:
+          type: string
+        username:
+          type: string
+        domain:
+          type: string
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+          nullable: true
+        client_id:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    InboxList:
+      type: object
+      required: [items, has_more]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Inbox"
+        next_page_token:
+          type: string
+          nullable: true
+        has_more:
+          type: boolean
+
+    CreateInboxRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]*[a-z0-9]$"
+          minLength: 2
+          maxLength: 64
+        domain:
+          type: string
+        display_name:
+          type: string
+          maxLength: 255
+        client_id:
+          type: string
+          maxLength: 255
+
+    Attachment:
+      type: object
+      required: [attachment_id, filename, content_type, size]
+      properties:
+        attachment_id:
+          type: string
+        filename:
+          type: string
+        content_type:
+          type: string
+        size:
+          type: integer
+          description: Size in bytes
+
+    AttachmentInput:
+      type: object
+      required: [filename, content]
+      properties:
+        filename:
+          type: string
+        content:
+          type: string
+          format: byte
+          description: Base64-encoded content
+        content_type:
+          type: string
+
+    Message:
+      type: object
+      required: [message_id, inbox_id, thread_id, from, to, created_at]
+      properties:
+        message_id:
+          type: string
+        inbox_id:
+          type: string
+        thread_id:
+          type: string
+        from:
+          type: string
+        to:
+          type: array
+          items:
+            type: string
+        cc:
+          type: array
+          items:
+            type: string
+        bcc:
+          type: array
+          items:
+            type: string
+        subject:
+          type: string
+          nullable: true
+        text:
+          type: string
+          nullable: true
+        html:
+          type: string
+          nullable: true
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Attachment"
+        labels:
+          type: array
+          items:
+            type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+
+    MessageList:
+      type: object
+      required: [items, has_more]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Message"
+        next_page_token:
+          type: string
+          nullable: true
+        has_more:
+          type: boolean
+
+    SendMessageRequest:
+      type: object
+      required: [to, subject]
+      properties:
+        to:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+        cc:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+        bcc:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+        subject:
+          type: string
+          maxLength: 998
+        text:
+          type: string
+        html:
+          type: string
+        reply_to:
+          type: string
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttachmentInput"
+        labels:
+          type: array
+          items:
+            type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+
+    ReplyMessageRequest:
+      type: object
+      properties:
+        text:
+          type: string
+        html:
+          type: string
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttachmentInput"
+        labels:
+          type: array
+          items:
+            type: string
+
+    Draft:
+      type: object
+      required: [draft_id, inbox_id, created_at, updated_at]
+      properties:
+        draft_id:
+          type: string
+        inbox_id:
+          type: string
+        to:
+          type: array
+          items:
+            type: string
+        cc:
+          type: array
+          items:
+            type: string
+        bcc:
+          type: array
+          items:
+            type: string
+        subject:
+          type: string
+          nullable: true
+        text:
+          type: string
+          nullable: true
+        html:
+          type: string
+          nullable: true
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Attachment"
+        send_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    DraftList:
+      type: object
+      required: [items, has_more]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Draft"
+        next_page_token:
+          type: string
+          nullable: true
+        has_more:
+          type: boolean
+
+    CreateDraftRequest:
+      type: object
+      properties:
+        to:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+        cc:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+        bcc:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+        subject:
+          type: string
+        text:
+          type: string
+        html:
+          type: string
+        reply_to:
+          type: string
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttachmentInput"
+        send_at:
+          type: string
+          format: date-time
+
+    UpdateDraftRequest:
+      type: object
+      properties:
+        to:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+        cc:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+        bcc:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+        subject:
+          type: string
+        text:
+          type: string
+        html:
+          type: string
+        reply_to:
+          type: string
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttachmentInput"
+        send_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    Webhook:
+      type: object
+      required: [webhook_id, url, event_types, enabled, created_at, updated_at]
+      properties:
+        webhook_id:
+          type: string
+        url:
+          type: string
+          format: uri
+        event_types:
+          type: array
+          items:
+            type: string
+            enum:
+              - message.received
+              - message.sent
+              - message.delivered
+              - message.bounced
+              - message.complained
+              - message.rejected
+        inbox_ids:
+          type: array
+          items:
+            type: string
+        pod_ids:
+          type: array
+          items:
+            type: string
+        client_id:
+          type: string
+          nullable: true
+        secret:
+          type: string
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    WebhookList:
+      type: object
+      required: [items, has_more]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Webhook"
+        next_page_token:
+          type: string
+          nullable: true
+        has_more:
+          type: boolean
+
+    CreateWebhookRequest:
+      type: object
+      required: [url, event_types]
+      properties:
+        url:
+          type: string
+          format: uri
+        event_types:
+          type: array
+          items:
+            type: string
+            enum:
+              - message.received
+              - message.sent
+              - message.delivered
+              - message.bounced
+              - message.complained
+              - message.rejected
+          minItems: 1
+        inbox_ids:
+          type: array
+          items:
+            type: string
+        pod_ids:
+          type: array
+          items:
+            type: string
+        client_id:
+          type: string
+        secret:
+          type: string
+
+    UpdateWebhookRequest:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+        event_types:
+          type: array
+          items:
+            type: string
+            enum:
+              - message.received
+              - message.sent
+              - message.delivered
+              - message.bounced
+              - message.complained
+              - message.rejected
+        inbox_ids:
+          type: array
+          items:
+            type: string
+        pod_ids:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+
+    DnsRecord:
+      type: object
+      required: [type, name, value]
+      properties:
+        type:
+          type: string
+          enum: [TXT, CNAME, MX]
+        name:
+          type: string
+        value:
+          type: string
+
+    Domain:
+      type: object
+      required: [domain_id, domain, status, dns_records, created_at, updated_at]
+      properties:
+        domain_id:
+          type: string
+        domain:
+          type: string
+        pod_id:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [pending, verifying, verified, failed]
+        dns_records:
+          type: array
+          items:
+            $ref: "#/components/schemas/DnsRecord"
+        verified_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    DomainList:
+      type: object
+      required: [items, has_more]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Domain"
+        next_page_token:
+          type: string
+          nullable: true
+        has_more:
+          type: boolean
+
+    AddDomainRequest:
+      type: object
+      required: [domain]
+      properties:
+        domain:
+          type: string
+        pod_id:
+          type: string
+
+    WebhookEvent:
+      type: object
+      required: [id, type, created_at, data]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum:
+            - message.received
+            - message.sent
+            - message.delivered
+            - message.bounced
+            - message.complained
+            - message.rejected
+        created_at:
+          type: string
+          format: date-time
+        data:
+          type: object
+          description: Event-specific payload

@@ -1,0 +1,211 @@
+// OpenAgentMail Database Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Organization - top-level tenant
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  plan      String   @default("free")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  apiKeys  ApiKey[]
+  pods     Pod[]
+  domains  Domain[]
+  webhooks Webhook[]
+
+  @@map("organizations")
+}
+
+// API Keys for authentication
+model ApiKey {
+  id             String       @id @default(cuid())
+  key            String       @unique
+  keyHash        String       @map("key_hash")
+  keyType        String       @default("org_key") @map("key_type") // org_key or pod_key
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  podId          String?      @map("pod_id")
+  pod            Pod?         @relation(fields: [podId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  lastUsedAt     DateTime?    @map("last_used_at")
+  expiresAt      DateTime?    @map("expires_at")
+
+  @@map("api_keys")
+}
+
+// Pods for multi-tenant isolation
+model Pod {
+  id             String       @id @default(cuid())
+  name           String
+  clientId       String?      @unique @map("client_id")
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  apiKeys  ApiKey[]
+  inboxes  Inbox[]
+  domains  Domain[]
+  webhooks Webhook[]
+
+  @@map("pods")
+}
+
+// Email inboxes
+model Inbox {
+  id          String   @id @default(cuid())
+  username    String
+  domain      String
+  email       String   @unique
+  displayName String?  @map("display_name")
+  clientId    String?  @unique @map("client_id")
+  podId       String   @map("pod_id")
+  pod         Pod      @relation(fields: [podId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  messages Message[]
+  drafts   Draft[]
+
+  @@unique([username, domain, podId])
+  @@map("inboxes")
+}
+
+// Email messages
+model Message {
+  id          String   @id @default(cuid())
+  threadId    String   @map("thread_id")
+  inboxId     String   @map("inbox_id")
+  inbox       Inbox    @relation(fields: [inboxId], references: [id], onDelete: Cascade)
+  fromAddress String   @map("from_address")
+  toAddresses String[] @map("to_addresses")
+  ccAddresses String[] @map("cc_addresses")
+  bccAddresses String[] @map("bcc_addresses")
+  subject     String?
+  textBody    String?  @map("text_body")
+  htmlBody    String?  @map("html_body")
+  labels      String[] @default([])
+  headers     Json     @default("{}")
+  direction   String   @default("outbound") // inbound or outbound
+  status      String   @default("sent") // sent, delivered, failed
+  externalId  String?  @map("external_id") // message-id from email headers
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  attachments Attachment[]
+
+  @@index([inboxId, createdAt])
+  @@index([threadId])
+  @@map("messages")
+}
+
+// Email attachments
+model Attachment {
+  id          String  @id @default(cuid())
+  messageId   String  @map("message_id")
+  message     Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  filename    String
+  contentType String  @map("content_type")
+  size        Int
+  storageKey  String  @map("storage_key") // S3 or local path
+
+  @@map("attachments")
+}
+
+// Email drafts
+model Draft {
+  id          String   @id @default(cuid())
+  inboxId     String   @map("inbox_id")
+  inbox       Inbox    @relation(fields: [inboxId], references: [id], onDelete: Cascade)
+  toAddresses String[] @map("to_addresses")
+  ccAddresses String[] @map("cc_addresses")
+  bccAddresses String[] @map("bcc_addresses")
+  subject     String?
+  textBody    String?  @map("text_body")
+  htmlBody    String?  @map("html_body")
+  sendAt      DateTime? @map("send_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  attachments DraftAttachment[]
+
+  @@map("drafts")
+}
+
+// Draft attachments
+model DraftAttachment {
+  id          String @id @default(cuid())
+  draftId     String @map("draft_id")
+  draft       Draft  @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  filename    String
+  contentType String @map("content_type")
+  size        Int
+  storageKey  String @map("storage_key")
+
+  @@map("draft_attachments")
+}
+
+// Webhooks
+model Webhook {
+  id             String       @id @default(cuid())
+  url            String
+  secret         String
+  eventTypes     String[]     @map("event_types")
+  inboxIds       String[]     @map("inbox_ids")
+  podIds         String[]     @map("pod_ids")
+  clientId       String?      @unique @map("client_id")
+  enabled        Boolean      @default(true)
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  podId          String?      @map("pod_id")
+  pod            Pod?         @relation(fields: [podId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  deliveries WebhookDelivery[]
+
+  @@map("webhooks")
+}
+
+// Webhook delivery log
+model WebhookDelivery {
+  id           String   @id @default(cuid())
+  webhookId    String   @map("webhook_id")
+  webhook      Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  eventType    String   @map("event_type")
+  payload      Json
+  status       String   @default("pending") // pending, success, failed
+  attempts     Int      @default(0)
+  lastAttempt  DateTime? @map("last_attempt")
+  responseCode Int?     @map("response_code")
+  responseBody String?  @map("response_body")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([webhookId, status])
+  @@map("webhook_deliveries")
+}
+
+// Custom domains
+model Domain {
+  id             String       @id @default(cuid())
+  domain         String       @unique
+  status         String       @default("pending") // pending, verifying, verified, failed
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  podId          String?      @map("pod_id")
+  pod            Pod?         @relation(fields: [podId], references: [id], onDelete: Cascade)
+  dnsRecords     Json         @default("[]") @map("dns_records")
+  verifiedAt     DateTime?    @map("verified_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@map("domains")
+}
