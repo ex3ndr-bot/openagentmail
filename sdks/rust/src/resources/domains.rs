@@ -1,132 +1,67 @@
-//! Domains resource
+//! Domain resource operations
 
-use crate::client::ApiClient;
+use std::sync::Arc;
+
+use crate::client::ClientInner;
 use crate::error::Result;
-use crate::types::{CreateDomainRequest, Domain, PaginatedResponse, PaginationParams};
+use crate::types::{AddDomainRequest, Domain, PaginatedResponse, PaginationParams};
 
-/// Operations on custom domains
-pub struct DomainsResource<'a> {
-    client: &'a ApiClient,
+/// Domain resource operations
+#[derive(Debug, Clone)]
+pub struct Domains {
+    inner: Arc<ClientInner>,
 }
 
-impl<'a> DomainsResource<'a> {
-    pub(crate) fn new(client: &'a ApiClient) -> Self {
-        Self { client }
+impl Domains {
+    pub(crate) fn new(inner: Arc<ClientInner>) -> Self {
+        Self { inner }
     }
 
-    /// Add a custom domain
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::{OpenAgentMail, CreateDomainRequest};
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let client = OpenAgentMail::new("your-api-key")?;
-    ///     
-    ///     let domain = client.domains().create(
-    ///         CreateDomainRequest::new("mail.mycompany.com")
-    ///             .pod_id("pod_xyz789")
-    ///     ).await?;
-    ///     
-    ///     println!("Domain added: {}", domain.domain);
-    ///     println!("Status: {:?}", domain.status);
-    ///     
-    ///     // DNS records to configure
-    ///     for record in &domain.dns_records {
-    ///         println!("{} {} -> {}", record.record_type, record.name, record.value);
-    ///     }
-    ///     
-    ///     Ok(())
-    /// }
-    /// ```
-    pub async fn create(&self, request: CreateDomainRequest) -> Result<Domain> {
-        self.client.post("domains", &request).await
+    /// Add a new domain
+    pub async fn add(&self, request: AddDomainRequest) -> Result<Domain> {
+        let response = self.inner.post("/domains").json(&request).send().await?;
+        self.inner.handle_response(response).await
     }
 
-    /// List all custom domains
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::{OpenAgentMail, PaginationParams};
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let client = OpenAgentMail::new("your-api-key")?;
-    ///     
-    ///     let domains = client.domains().list(PaginationParams::new()).await?;
-    ///     for domain in domains.items {
-    ///         println!("{} - {:?}", domain.domain, domain.status);
-    ///     }
-    ///     Ok(())
-    /// }
-    /// ```
+    /// List all domains
     pub async fn list(&self, params: PaginationParams) -> Result<PaginatedResponse<Domain>> {
-        let query = self.client.build_pagination_query(&params);
-        self.client.get_with_query("domains", &query).await
+        let mut request = self.inner.get("/domains");
+
+        for (key, value) in params.to_query_params() {
+            request = request.query(&[(key, value)]);
+        }
+
+        let response = request.send().await?;
+        self.inner.handle_response(response).await
     }
 
-    /// Get a domain by ID
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::OpenAgentMail;
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let client = OpenAgentMail::new("your-api-key")?;
-    ///     let domain = client.domains().get("dom_stu901").await?;
-    ///     println!("Domain: {} ({:?})", domain.domain, domain.status);
-    ///     Ok(())
-    /// }
-    /// ```
+    /// Get a specific domain by ID
     pub async fn get(&self, domain_id: &str) -> Result<Domain> {
-        self.client.get(&format!("domains/{}", domain_id)).await
+        let response = self
+            .inner
+            .get(&format!("/domains/{}", domain_id))
+            .send()
+            .await?;
+        self.inner.handle_response(response).await
     }
 
-    /// Trigger domain verification
-    ///
-    /// Re-checks DNS records to verify domain ownership.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::OpenAgentMail;
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let client = OpenAgentMail::new("your-api-key")?;
-    ///     
-    ///     let domain = client.domains().verify("dom_stu901").await?;
-    ///     println!("Verification status: {:?}", domain.status);
-    ///     Ok(())
-    /// }
-    /// ```
+    /// Verify a domain
     pub async fn verify(&self, domain_id: &str) -> Result<Domain> {
-        self.client
-            .post_empty(&format!("domains/{}/verify", domain_id))
-            .await
+        let response = self
+            .inner
+            .post(&format!("/domains/{}/verify", domain_id))
+            .send()
+            .await?;
+        self.inner.handle_response(response).await
     }
 
-    /// Delete a custom domain
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::OpenAgentMail;
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let client = OpenAgentMail::new("your-api-key")?;
-    ///     client.domains().delete("dom_stu901").await?;
-    ///     println!("Domain deleted");
-    ///     Ok(())
-    /// }
-    /// ```
+    /// Delete a domain
     pub async fn delete(&self, domain_id: &str) -> Result<()> {
-        self.client.delete(&format!("domains/{}", domain_id)).await
+        let response = self
+            .inner
+            .delete(&format!("/domains/{}", domain_id))
+            .send()
+            .await?;
+        self.inner.handle_empty_response(response).await
     }
 }

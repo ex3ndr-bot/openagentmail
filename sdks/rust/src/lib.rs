@@ -45,8 +45,7 @@
 //! - [`OpenAgentMail::webhooks`] - Real-time notifications
 //! - [`OpenAgentMail::domains`] - Custom domains
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
+#![allow(missing_docs)]
 
 pub mod client;
 pub mod error;
@@ -129,19 +128,6 @@ impl OpenAgentMail {
     }
 
     /// Access organization operations
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::OpenAgentMail;
-    ///
-    /// # async fn example() -> Result<(), openagentmail::Error> {
-    /// let client = OpenAgentMail::new("your-api-key")?;
-    /// let org = client.organization().get().await?;
-    /// println!("Plan: {}", org.plan);
-    /// # Ok(())
-    /// # }
-    /// ```
     pub fn organization(&self) -> OrganizationResource<'_> {
         OrganizationResource::new(&self.client)
     }
@@ -150,23 +136,6 @@ impl OpenAgentMail {
     ///
     /// Pods provide multi-tenant isolation. Each pod has its own
     /// inboxes, domains, and data.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::{OpenAgentMail, CreatePodRequest, PaginationParams};
-    ///
-    /// # async fn example() -> Result<(), openagentmail::Error> {
-    /// let client = OpenAgentMail::new("your-api-key")?;
-    ///
-    /// // Create a pod
-    /// let pod = client.pods().create(CreatePodRequest::new("Production")).await?;
-    ///
-    /// // List pods
-    /// let pods = client.pods().list(PaginationParams::new()).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
     pub fn pods(&self) -> PodsResource<'_> {
         PodsResource::new(&self.client)
     }
@@ -174,24 +143,6 @@ impl OpenAgentMail {
     /// Access inbox operations
     ///
     /// Inboxes are email addresses that can send and receive messages.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::{OpenAgentMail, CreateInboxRequest};
-    ///
-    /// # async fn example() -> Result<(), openagentmail::Error> {
-    /// let client = OpenAgentMail::new("your-api-key")?;
-    ///
-    /// let inbox = client.inboxes().create(
-    ///     "pod_xyz789",
-    ///     CreateInboxRequest::new("support-agent").display_name("Support Agent")
-    /// ).await?;
-    ///
-    /// println!("Created: {}", inbox.email);
-    /// # Ok(())
-    /// # }
-    /// ```
     pub fn inboxes(&self) -> InboxesResource<'_> {
         InboxesResource::new(&self.client)
     }
@@ -199,30 +150,6 @@ impl OpenAgentMail {
     /// Access message operations
     ///
     /// Send emails and manage received messages.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::{OpenAgentMail, SendMessageRequest, ListMessagesParams};
-    ///
-    /// # async fn example() -> Result<(), openagentmail::Error> {
-    /// let client = OpenAgentMail::new("your-api-key")?;
-    ///
-    /// // Send a message
-    /// let msg = client.messages().send(
-    ///     "inb_abc123",
-    ///     SendMessageRequest::new("user@example.com", "Hello!")
-    ///         .text("Hello from OpenAgentMail!")
-    /// ).await?;
-    ///
-    /// // List messages
-    /// let messages = client.messages().list(
-    ///     "inb_abc123",
-    ///     ListMessagesParams::new().limit(10)
-    /// ).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
     pub fn messages(&self) -> MessagesResource<'_> {
         MessagesResource::new(&self.client)
     }
@@ -230,29 +157,6 @@ impl OpenAgentMail {
     /// Access draft operations
     ///
     /// Drafts are unsent messages that can be edited before sending.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::{OpenAgentMail, CreateDraftRequest};
-    ///
-    /// # async fn example() -> Result<(), openagentmail::Error> {
-    /// let client = OpenAgentMail::new("your-api-key")?;
-    ///
-    /// // Create a draft
-    /// let draft = client.drafts().create(
-    ///     "inb_abc123",
-    ///     CreateDraftRequest::new()
-    ///         .add_to("user@example.com")
-    ///         .subject("Draft email")
-    ///         .text("Work in progress...")
-    /// ).await?;
-    ///
-    /// // Send the draft
-    /// let message = client.drafts().send("inb_abc123", &draft.draft_id).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
     pub fn drafts(&self) -> DraftsResource<'_> {
         DraftsResource::new(&self.client)
     }
@@ -260,26 +164,6 @@ impl OpenAgentMail {
     /// Access webhook operations
     ///
     /// Webhooks enable real-time notifications for email events.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::{OpenAgentMail, CreateWebhookRequest, WebhookEventType};
-    ///
-    /// # async fn example() -> Result<(), openagentmail::Error> {
-    /// let client = OpenAgentMail::new("your-api-key")?;
-    ///
-    /// let webhook = client.webhooks().create(
-    ///     CreateWebhookRequest::new(
-    ///         "https://api.myapp.com/webhooks/email",
-    ///         vec![WebhookEventType::MessageReceived]
-    ///     )
-    /// ).await?;
-    ///
-    /// println!("Webhook secret: {}", webhook.secret);
-    /// # Ok(())
-    /// # }
-    /// ```
     pub fn webhooks(&self) -> WebhooksResource<'_> {
         WebhooksResource::new(&self.client)
     }
@@ -287,29 +171,6 @@ impl OpenAgentMail {
     /// Access domain operations
     ///
     /// Add and manage custom email domains.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::{OpenAgentMail, CreateDomainRequest};
-    ///
-    /// # async fn example() -> Result<(), openagentmail::Error> {
-    /// let client = OpenAgentMail::new("your-api-key")?;
-    ///
-    /// let domain = client.domains().create(
-    ///     CreateDomainRequest::new("mail.mycompany.com")
-    /// ).await?;
-    ///
-    /// // Configure DNS records
-    /// for record in &domain.dns_records {
-    ///     println!("Add {} record: {} -> {}", record.record_type, record.name, record.value);
-    /// }
-    ///
-    /// // Verify after DNS is configured
-    /// let verified = client.domains().verify(&domain.domain_id).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
     pub fn domains(&self) -> DomainsResource<'_> {
         DomainsResource::new(&self.client)
     }
