@@ -1,65 +1,36 @@
-//! Example: Setting up webhooks
-//!
-//! This example demonstrates how to create and manage webhooks.
-//!
-//! Run with: cargo run --example webhooks
-
-use openagentmail::{
-    CreateWebhookRequest, OpenAgentMail, PaginationParams, UpdateWebhookRequest, WebhookEventType,
-};
+use openagentmail::{CreateWebhookRequest, OpenAgentMail, UpdateWebhookRequest, WebhookEventType};
+use std::env;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Get API key from environment
-    let api_key = std::env::var("OPENAGENTMAIL_API_KEY")
-        .expect("OPENAGENTMAIL_API_KEY environment variable must be set");
+    let api_key = env::var("OAM_API_KEY").expect("OAM_API_KEY not set");
+    let webhook_url = env::var("OAM_WEBHOOK_URL").unwrap_or_else(|_| "https://example.com/webhook".to_string());
 
-    // Create client
-    let client = OpenAgentMail::new(api_key)?;
+    let client = OpenAgentMail::new(api_key);
 
-    // Create a webhook
-    let webhook = client
-        .webhooks()
-        .create(
-            CreateWebhookRequest::new(
-                "https://api.example.com/webhooks/email",
-                vec![
-                    WebhookEventType::MessageReceived,
-                    WebhookEventType::MessageSent,
-                    WebhookEventType::MessageBounced,
-                ],
-            )
-            .client_id("example-webhook-001"),
-        )
+    let webhook = client.webhooks()
+        .create(CreateWebhookRequest::builder()
+            .url(&webhook_url)
+            .event_type(WebhookEventType::MessageReceived)
+            .event_type(WebhookEventType::MessageSent)
+            .client_id("example-webhook-001")
+            .build())
         .await?;
 
-    println!("Created webhook:");
-    println!("  ID: {}", webhook.webhook_id);
-    println!("  URL: {}", webhook.url);
-    println!("  Events: {:?}", webhook.event_types);
-    println!("  Secret: {}", webhook.secret);
-    println!("  Enabled: {}", webhook.enabled);
+    println!("Created webhook: {}", webhook.webhook_id);
+    println!("Secret: {}", webhook.secret);
 
-    // List all webhooks
-    println!("\nAll webhooks:");
-    let webhooks = client.webhooks().list(PaginationParams::new()).await?;
-    for wh in &webhooks.items {
-        println!("  - {} -> {} ({})", wh.webhook_id, wh.url, if wh.enabled { "enabled" } else { "disabled" });
-    }
-
-    // Update the webhook (disable it)
-    let updated = client
-        .webhooks()
-        .update(
-            &webhook.webhook_id,
-            UpdateWebhookRequest::new().enabled(false),
-        )
+    let updated = client.webhooks()
+        .update(&webhook.webhook_id, UpdateWebhookRequest {
+            enabled: Some(false),
+            ..Default::default()
+        })
         .await?;
-    println!("\nWebhook disabled: {}", !updated.enabled);
 
-    // Delete the webhook
-    client.webhooks().delete(&webhook.webhook_id).await?;
-    println!("Webhook deleted");
+    println!("Disabled: enabled={}", updated.enabled);
+
+    let rotated = client.webhooks().rotate_secret(&webhook.webhook_id).await?;
+    println!("New secret: {}", rotated.secret);
 
     Ok(())
 }

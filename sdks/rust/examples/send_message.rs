@@ -1,55 +1,33 @@
-//! Example: Sending an email
-//!
-//! This example demonstrates how to send an email message.
-//!
-//! Run with: cargo run --example send_message
-
-use openagentmail::{AttachmentInput, ListInboxesParams, OpenAgentMail, SendMessageRequest};
+use openagentmail::{ListMessagesParams, OpenAgentMail, SendMessageRequest};
+use std::env;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Get API key from environment
-    let api_key = std::env::var("OPENAGENTMAIL_API_KEY")
-        .expect("OPENAGENTMAIL_API_KEY environment variable must be set");
+    let api_key = env::var("OAM_API_KEY").expect("OAM_API_KEY not set");
+    let inbox_id = env::var("OAM_INBOX_ID").expect("OAM_INBOX_ID not set");
+    let recipient = env::var("OAM_RECIPIENT").unwrap_or_else(|_| "test@example.com".to_string());
 
-    // Create client
-    let client = OpenAgentMail::new(api_key)?;
+    let client = OpenAgentMail::new(api_key);
 
-    // Get an inbox to send from
-    let inboxes = client
-        .inboxes()
-        .list(ListInboxesParams::new().limit(1))
+    let message = client.messages()
+        .send(&inbox_id, SendMessageRequest::builder()
+            .to(&recipient)
+            .subject("Hello from OpenAgentMail!")
+            .text("This is a test email sent via the Rust SDK.")
+            .html("<h1>Hello!</h1><p>Test from the <strong>Rust SDK</strong>.</p>")
+            .build())
         .await?;
 
-    let inbox = inboxes
-        .items
-        .first()
-        .expect("No inboxes found. Create one first.");
+    println!("Sent: {} -> {:?}", message.message_id, message.to);
 
-    println!("Sending from: {}", inbox.email);
+    let messages = client.messages()
+        .list(&inbox_id, ListMessagesParams::new().limit(5))
+        .await?;
 
-    // Build the message
-    let request = SendMessageRequest::new("recipient@example.com", "Hello from OpenAgentMail!")
-        .text("This is a test email sent using the OpenAgentMail Rust SDK.")
-        .html("<p>This is a test email sent using the <strong>OpenAgentMail Rust SDK</strong>.</p>")
-        .add_cc("cc@example.com")
-        .label("test")
-        .label("outbound");
-
-    // Optionally add an attachment
-    // let request = request.attachment(
-    //     AttachmentInput::new("hello.txt", base64::encode("Hello, World!"))
-    //         .content_type("text/plain")
-    // );
-
-    // Send the message
-    let message = client.messages().send(&inbox.inbox_id, request).await?;
-
-    println!("\nMessage sent:");
-    println!("  ID: {}", message.message_id);
-    println!("  Thread: {}", message.thread_id);
-    println!("  Subject: {}", message.subject);
-    println!("  To: {:?}", message.to);
+    println!("Recent messages:");
+    for msg in messages.items {
+        println!("  - {}: {}", msg.from, msg.subject);
+    }
 
     Ok(())
 }

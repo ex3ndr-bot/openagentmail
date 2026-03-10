@@ -1,141 +1,43 @@
-//! Webhooks resource
-
-use crate::client::ApiClient;
+use std::sync::Arc;
+use crate::client::ClientInner;
 use crate::error::Result;
-use crate::types::{
-    CreateWebhookRequest, PaginatedResponse, PaginationParams, UpdateWebhookRequest, Webhook,
-};
+use crate::types::{CreateWebhookRequest, PaginatedResponse, PaginationParams, UpdateWebhookRequest, Webhook};
 
-/// Operations on webhooks
-pub struct WebhooksResource<'a> {
-    client: &'a ApiClient,
-}
+#[derive(Debug, Clone)]
+pub struct Webhooks { inner: Arc<ClientInner> }
 
-impl<'a> WebhooksResource<'a> {
-    pub(crate) fn new(client: &'a ApiClient) -> Self {
-        Self { client }
-    }
+impl Webhooks {
+    pub(crate) fn new(inner: Arc<ClientInner>) -> Self { Self { inner } }
 
-    /// Create a new webhook
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::{OpenAgentMail, CreateWebhookRequest, WebhookEventType};
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let client = OpenAgentMail::new("your-api-key")?;
-    ///     
-    ///     let webhook = client.webhooks().create(
-    ///         CreateWebhookRequest::new(
-    ///             "https://api.myapp.com/webhooks/email",
-    ///             vec![WebhookEventType::MessageReceived, WebhookEventType::MessageBounced]
-    ///         )
-    ///         .inbox_id("inb_abc123")
-    ///         .client_id("webhook-001")
-    ///     ).await?;
-    ///     
-    ///     println!("Created webhook: {}", webhook.webhook_id);
-    ///     println!("Secret: {}", webhook.secret);
-    ///     Ok(())
-    /// }
-    /// ```
     pub async fn create(&self, request: CreateWebhookRequest) -> Result<Webhook> {
-        self.client.post("webhooks", &request).await
+        let response = self.inner.post("/webhooks").json(&request).send().await?;
+        self.inner.handle_response(response).await
     }
 
-    /// List all webhooks
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::{OpenAgentMail, PaginationParams};
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let client = OpenAgentMail::new("your-api-key")?;
-    ///     
-    ///     let webhooks = client.webhooks().list(PaginationParams::new()).await?;
-    ///     for wh in webhooks.items {
-    ///         println!("Webhook: {} -> {}", wh.webhook_id, wh.url);
-    ///     }
-    ///     Ok(())
-    /// }
-    /// ```
     pub async fn list(&self, params: PaginationParams) -> Result<PaginatedResponse<Webhook>> {
-        let query = self.client.build_pagination_query(&params);
-        self.client.get_with_query("webhooks", &query).await
+        let mut request = self.inner.get("/webhooks");
+        for (key, value) in params.to_query_params() { request = request.query(&[(key, value)]); }
+        let response = request.send().await?;
+        self.inner.handle_response(response).await
     }
 
-    /// Get a webhook by ID
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::OpenAgentMail;
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let client = OpenAgentMail::new("your-api-key")?;
-    ///     let webhook = client.webhooks().get("whk_pqr678").await?;
-    ///     println!("Webhook URL: {}", webhook.url);
-    ///     println!("Events: {:?}", webhook.event_types);
-    ///     Ok(())
-    /// }
-    /// ```
     pub async fn get(&self, webhook_id: &str) -> Result<Webhook> {
-        self.client.get(&format!("webhooks/{}", webhook_id)).await
+        let response = self.inner.get(&format!("/webhooks/{}", webhook_id)).send().await?;
+        self.inner.handle_response(response).await
     }
 
-    /// Update a webhook
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::{OpenAgentMail, UpdateWebhookRequest, WebhookEventType};
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let client = OpenAgentMail::new("your-api-key")?;
-    ///     
-    ///     // Update webhook URL
-    ///     let webhook = client.webhooks().update(
-    ///         "whk_pqr678",
-    ///         UpdateWebhookRequest::new().url("https://api.myapp.com/webhooks/v2")
-    ///     ).await?;
-    ///     
-    ///     // Disable webhook
-    ///     let webhook = client.webhooks().update(
-    ///         "whk_pqr678",
-    ///         UpdateWebhookRequest::new().enabled(false)
-    ///     ).await?;
-    ///     
-    ///     Ok(())
-    /// }
-    /// ```
     pub async fn update(&self, webhook_id: &str, request: UpdateWebhookRequest) -> Result<Webhook> {
-        self.client
-            .put(&format!("webhooks/{}", webhook_id), &request)
-            .await
+        let response = self.inner.patch(&format!("/webhooks/{}", webhook_id)).json(&request).send().await?;
+        self.inner.handle_response(response).await
     }
 
-    /// Delete a webhook
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::OpenAgentMail;
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let client = OpenAgentMail::new("your-api-key")?;
-    ///     client.webhooks().delete("whk_pqr678").await?;
-    ///     println!("Webhook deleted");
-    ///     Ok(())
-    /// }
-    /// ```
     pub async fn delete(&self, webhook_id: &str) -> Result<()> {
-        self.client.delete(&format!("webhooks/{}", webhook_id)).await
+        let response = self.inner.delete(&format!("/webhooks/{}", webhook_id)).send().await?;
+        self.inner.handle_empty_response(response).await
+    }
+
+    pub async fn rotate_secret(&self, webhook_id: &str) -> Result<Webhook> {
+        let response = self.inner.post(&format!("/webhooks/{}/rotate-secret", webhook_id)).send().await?;
+        self.inner.handle_response(response).await
     }
 }

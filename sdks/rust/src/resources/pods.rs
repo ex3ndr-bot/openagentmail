@@ -1,119 +1,38 @@
-//! Pods resource
-
-use crate::client::ApiClient;
+use std::sync::Arc;
+use crate::client::ClientInner;
 use crate::error::Result;
 use crate::types::{CreatePodRequest, PaginatedResponse, PaginationParams, Pod, UpdatePodRequest};
 
-/// Operations on pods
-pub struct PodsResource<'a> {
-    client: &'a ApiClient,
-}
+#[derive(Debug, Clone)]
+pub struct Pods { inner: Arc<ClientInner> }
 
-impl<'a> PodsResource<'a> {
-    pub(crate) fn new(client: &'a ApiClient) -> Self {
-        Self { client }
-    }
+impl Pods {
+    pub(crate) fn new(inner: Arc<ClientInner>) -> Self { Self { inner } }
 
-    /// Create a new pod
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::{OpenAgentMail, CreatePodRequest};
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let client = OpenAgentMail::new("your-api-key")?;
-    ///     let pod = client.pods().create(
-    ///         CreatePodRequest::new("Production").client_id("prod-001")
-    ///     ).await?;
-    ///     println!("Created pod: {}", pod.pod_id);
-    ///     Ok(())
-    /// }
-    /// ```
     pub async fn create(&self, request: CreatePodRequest) -> Result<Pod> {
-        self.client.post("pods", &request).await
+        let response = self.inner.post("/pods").json(&request).send().await?;
+        self.inner.handle_response(response).await
     }
 
-    /// List all pods
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::{OpenAgentMail, PaginationParams};
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let client = OpenAgentMail::new("your-api-key")?;
-    ///     let pods = client.pods().list(PaginationParams::new().limit(10)).await?;
-    ///     for pod in pods.items {
-    ///         println!("Pod: {} ({})", pod.name, pod.pod_id);
-    ///     }
-    ///     Ok(())
-    /// }
-    /// ```
     pub async fn list(&self, params: PaginationParams) -> Result<PaginatedResponse<Pod>> {
-        let query = self.client.build_pagination_query(&params);
-        self.client.get_with_query("pods", &query).await
+        let mut request = self.inner.get("/pods");
+        for (key, value) in params.to_query_params() { request = request.query(&[(key, value)]); }
+        let response = request.send().await?;
+        self.inner.handle_response(response).await
     }
 
-    /// Get a pod by ID
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::OpenAgentMail;
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let client = OpenAgentMail::new("your-api-key")?;
-    ///     let pod = client.pods().get("pod_xyz789").await?;
-    ///     println!("Pod: {}", pod.name);
-    ///     Ok(())
-    /// }
-    /// ```
     pub async fn get(&self, pod_id: &str) -> Result<Pod> {
-        self.client.get(&format!("pods/{}", pod_id)).await
+        let response = self.inner.get(&format!("/pods/{}", pod_id)).send().await?;
+        self.inner.handle_response(response).await
     }
 
-    /// Update a pod
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::{OpenAgentMail, UpdatePodRequest};
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let client = OpenAgentMail::new("your-api-key")?;
-    ///     let pod = client.pods().update(
-    ///         "pod_xyz789",
-    ///         UpdatePodRequest::new().name("Production v2")
-    ///     ).await?;
-    ///     println!("Updated pod: {}", pod.name);
-    ///     Ok(())
-    /// }
-    /// ```
     pub async fn update(&self, pod_id: &str, request: UpdatePodRequest) -> Result<Pod> {
-        self.client.put(&format!("pods/{}", pod_id), &request).await
+        let response = self.inner.patch(&format!("/pods/{}", pod_id)).json(&request).send().await?;
+        self.inner.handle_response(response).await
     }
 
-    /// Delete a pod
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use openagentmail::OpenAgentMail;
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let client = OpenAgentMail::new("your-api-key")?;
-    ///     client.pods().delete("pod_xyz789").await?;
-    ///     println!("Pod deleted");
-    ///     Ok(())
-    /// }
-    /// ```
     pub async fn delete(&self, pod_id: &str) -> Result<()> {
-        self.client.delete(&format!("pods/{}", pod_id)).await
+        let response = self.inner.delete(&format!("/pods/{}", pod_id)).send().await?;
+        self.inner.handle_empty_response(response).await
     }
 }
