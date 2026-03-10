@@ -7,13 +7,15 @@ This document describes the system architecture for OpenAgentMail, an open-sourc
 ## Table of Contents
 
 1. [System Overview](#system-overview)
-2. [Component Architecture](#component-architecture)
-3. [Data Flow](#data-flow)
-4. [Technology Stack](#technology-stack)
-5. [Database Schema](#database-schema)
-6. [Deployment Architecture](#deployment-architecture)
-7. [Security Model](#security-model)
-8. [Scaling Considerations](#scaling-considerations)
+2. [Email Infrastructure (Amazon SES)](#email-infrastructure-amazon-ses)
+3. [Why Amazon SES?](#why-amazon-ses)
+4. [Component Architecture](#component-architecture)
+5. [Data Flow](#data-flow)
+6. [Technology Stack](#technology-stack)
+7. [Database Schema](#database-schema)
+8. [Deployment Architecture](#deployment-architecture)
+9. [Security Model](#security-model)
+10. [Scaling Considerations](#scaling-considerations)
 
 ---
 
@@ -37,10 +39,159 @@ OpenAgentMail provides a complete email infrastructure as an API, enabling AI ag
         ┌─────────────────────┼─────────────────────┐
         ▼                     ▼                     ▼
 ┌───────────────┐    ┌───────────────┐    ┌───────────────┐
-│ Email Sending │    │Email Receiving│    │  Webhook      │
-│   (SMTP Out)  │    │  (MX/IMAP)    │    │  Delivery     │
+│  Amazon SES   │    │  Amazon SES   │    │  Webhook      │
+│   (Outbound)  │    │   (Inbound)   │    │  Delivery     │
 └───────────────┘    └───────────────┘    └───────────────┘
 ```
+
+---
+
+## Email Infrastructure (Amazon SES)
+
+OpenAgentMail uses **Amazon Simple Email Service (SES)** as the backbone for both inbound and outbound email. This provides enterprise-grade email delivery and receiving at scale with minimal operational overhead.
+
+### DNS Configuration
+
+For domains using OpenAgentMail, the following DNS records are required:
+
+```
+; MX record - Route inbound email to SES
+@           MX    10  inbound-smtp.us-east-1.amazonaws.com.
+
+; SPF record - Authorize SES to send on behalf of domain
+@           TXT   "v=spf1 include:amazonses.com -all"
+
+; DKIM records - Added automatically via SES domain verification
+; (3 CNAME records provided by SES)
+
+; DMARC - Policy for email authentication
+_dmarc      TXT   "v=DMARC1; p=quarantine; rua=mailto:dmarc@yourdomain.com"
+```
+
+### Inbound Email Flow
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  Incoming   │     │  Amazon     │     │  Amazon     │     │  Lambda /   │
+│   Email     │────▶│    SES      │────▶│    SNS      │────▶│  Webhook    │
+│             │     │  (Receipt)  │     │  (Topic)    │     │  Endpoint   │
+└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
+                                                                   │
+                                                                   ▼
+                                                           ┌─────────────┐
+                                                           │ OpenAgentMail│
+                                                           │   Backend   │
+                                                           └─────────────┘
+```
+
+**Step-by-step flow:**
+
+1. **External sender** sends email to `user@yourdomain.com`
+2. **DNS MX lookup** resolves to `inbound-smtp.us-east-1.amazonaws.com`
+3. **Amazon SES** receives the email and applies receipt rules
+4. **SES receipt rule** publishes the email content to an **SNS topic**
+5. **SNS** delivers the message to an HTTP endpoint (Lambda or webhook URL)
+6. **OpenAgentMail backend** processes, parses, and stores the message
+7. **Webhook** notifies the AI agent of the new message (if configured)
+
+### Outbound Email Flow
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│ OpenAgentMail│     │  Amazon     │     │  Recipient  │     │  Recipient  │
+│   Backend   │────▶│    SES      │────▶│    MX       │────▶│   Mailbox   │
+│             │     │  (SMTP)     │     │  Server     │     │             │
+└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
+```
+
+**Outbound uses SES SMTP or API:**
+- Emails are signed with DKIM automatically
+- SPF passes because SES IPs are authorized via `include:amazonses.com`
+- Bounce and complaint notifications come back via SNS
+
+### SES Region
+
+By default, OpenAgentMail uses **us-east-1** for SES. This can be configured per deployment. Ensure MX records match the region:
+
+| Region | MX Record |
+|--------|-----------|
+| us-east-1 | `inbound-smtp.us-east-1.amazonaws.com` |
+| us-west-2 | `inbound-smtp.us-west-2.amazonaws.com` |
+| eu-west-1 | `inbound-smtp.eu-west-1.amazonaws.com` |
+
+---
+
+## Why Amazon SES?
+
+When building email infrastructure for AI agents at scale, Amazon SES is the only practical choice. Here's why:
+
+### The Competition
+
+| Provider | Inbound | Outbound | Programmatic Routing | Cost (per 1K emails) | At Scale |
+|----------|---------|----------|---------------------|----------------------|----------|
+| **Amazon SES** | ✅ Full MX support | ✅ SMTP + API | ✅ SNS → Lambda | $0.10 | ✅ Millions |
+| Google Workspace | ⚠️ Limited API | ✅ Gmail API | ❌ No receipt rules | $6/user/month | ❌ Per-seat |
+| Azure Comm Services | ⚠️ Basic | ✅ API | ❌ No routing | $0.25 | ⚠️ Limited |
+| Mailgun | ⚠️ Webhook parsing | ✅ API | ⚠️ Routes only | $0.80 | ⚠️ Expensive |
+| SendGrid | ⚠️ Inbound Parse | ✅ API | ⚠️ Basic | $0.50 | ⚠️ Limited |
+| Postmark | ⚠️ Inbound webhook | ✅ API | ❌ No | $1.25 | ❌ Transactional |
+
+### Why Each Alternative Falls Short
+
+**Google (Gmail/Workspace)**
+- Gmail API has severe rate limits (250 quota units/second)
+- No programmatic inbound routing—emails go to a mailbox, not a webhook
+- Per-user pricing ($6-18/user/month) makes it cost-prohibitive at scale
+- No MX-level control; you're locked into Google's infrastructure
+- Designed for humans, not programmatic access
+
+**Microsoft Azure Communication Services**
+- Email is a secondary feature, not the core product
+- Inbound email support is minimal—no receipt rules, no SNS equivalent
+- Limited routing options; no way to programmatically process incoming mail
+- Higher cost ($0.25/1K) and less mature than SES
+
+**Mailgun**
+- Decent outbound, but inbound is webhook-only (no full MX control)
+- "Routes" are basic pattern matching, not programmable logic
+- Costs 8x more than SES ($0.80/1K vs $0.10/1K)
+- Less control over deliverability and IP reputation
+
+**SendGrid (Twilio)**
+- Inbound Parse is a webhook that receives parsed emails—limited flexibility
+- No native integration with cloud functions or queuing
+- You're parsing emails, not controlling the MX layer
+- $0.50/1K is 5x the cost of SES
+
+**Postmark**
+- Excellent for transactional email, but that's all it does
+- Inbound is basic webhook parsing
+- No receipt rules, no SNS, no Lambda integration
+- $1.25/1K and primarily designed for one-off transactional messages
+
+### Why SES Wins
+
+1. **True MX-Level Control**: SES is an actual MX server. You point your DNS at it, and it handles everything—SPF, DKIM, receiving, routing.
+
+2. **Programmable Routing**: Receipt rules + SNS + Lambda means you can run arbitrary code on every incoming email. Route to different backends, filter spam, extract attachments—all before it hits your database.
+
+3. **Cost at Scale**: $0.10 per 1,000 emails (both send and receive). No per-mailbox fees. An AI agent platform with 100,000 inboxes sending 10 emails/day each costs ~$3,000/month with SES. With Google Workspace at $6/user, that's $600,000/month.
+
+4. **Native AWS Integration**: IAM for permissions, CloudWatch for monitoring, S3 for attachment storage, Lambda for processing. No glue code needed.
+
+5. **Deliverability**: SES has excellent deliverability out of the box. Shared IPs are well-maintained, or you can use dedicated IPs for full control.
+
+6. **No Vendor Lock-in on Logic**: Your email processing logic runs in Lambda or your own servers. SES is just the transport layer—you own the code.
+
+### The Bottom Line
+
+For an email platform serving AI agents:
+- You need **full inbound control** (MX + routing) → Only SES has this
+- You need **programmatic processing** (not just parsing) → SNS + Lambda
+- You need **scale without per-seat costs** → $0.10/1K vs $6/user
+- You need **enterprise deliverability** → SES reputation management
+
+Amazon SES is not just the best option—it's the only option that makes technical and economic sense at scale.
 
 ---
 
@@ -61,31 +212,31 @@ The main REST API handling all client requests.
 **Technology:** Node.js/TypeScript with Express or Hono
 
 #### 2. Email Sending Service
-Handles outbound email delivery via SMTP.
+Handles outbound email delivery via Amazon SES SMTP/API.
 
 **Responsibilities:**
 - Message queuing
-- SMTP connection pooling
-- Delivery retry logic
-- Bounce handling
-- SPF/DKIM signing
+- SES API/SMTP integration
+- Delivery tracking
+- Bounce/complaint handling via SNS
+- DKIM signing (automatic via SES)
 
-**Technology:** Node.js with Nodemailer or custom SMTP client
+**Technology:** Node.js with AWS SDK or Nodemailer (SES transport)
 
 #### 3. Email Receiving Service
-Handles inbound email via MX records.
+Handles inbound email via SES receipt rules.
 
 **Responsibilities:**
-- SMTP server for receiving
+- SNS notification processing
 - Message parsing (MIME)
-- Attachment extraction
-- Spam/virus scanning
+- Attachment extraction to S3
+- Spam filtering (SES built-in)
 - Routing to correct inbox
 
-**Technology:** Haraka, Postal, or custom SMTP server
+**Technology:** Lambda function or HTTP webhook endpoint
 
 #### 4. Webhook Service
-Delivers real-time event notifications.
+Delivers real-time event notifications to AI agents.
 
 **Responsibilities:**
 - Event queuing
@@ -95,19 +246,9 @@ Delivers real-time event notifications.
 
 **Technology:** Node.js with Redis/BullMQ for queuing
 
-#### 5. IMAP/SMTP Bridge (Optional)
-Provides traditional email client access.
-
-**Responsibilities:**
-- IMAP server for mailbox access
-- SMTP server for sending via clients
-- Authentication against API keys
-
-**Technology:** Dovecot for IMAP, custom auth plugin
-
 ### Supporting Components
 
-#### 6. Database
+#### 5. Database
 Primary data store for all entities.
 
 **Responsibilities:**
@@ -117,7 +258,7 @@ Primary data store for all entities.
 
 **Technology:** PostgreSQL with pgvector for semantic search
 
-#### 7. Object Storage
+#### 6. Object Storage
 Stores email attachments and large content.
 
 **Responsibilities:**
@@ -125,19 +266,19 @@ Stores email attachments and large content.
 - HTML email content
 - Signed URL generation
 
-**Technology:** S3, MinIO, or Cloudflare R2
+**Technology:** Amazon S3 or Cloudflare R2
 
-#### 8. Message Queue
+#### 7. Message Queue
 Async task processing.
 
 **Responsibilities:**
-- Email send queue
 - Webhook delivery queue
 - Retry management
+- SNS message buffering
 
-**Technology:** Redis with BullMQ or RabbitMQ
+**Technology:** Redis with BullMQ or SQS
 
-#### 9. Cache
+#### 8. Cache
 Performance optimization.
 
 **Responsibilities:**
@@ -154,340 +295,173 @@ Performance optimization.
 ### Sending an Email
 
 ```
-┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
-│  Client  │────▶│   API    │────▶│  Queue   │────▶│  SMTP    │
-│          │     │  Server  │     │ (Send)   │     │ Sender   │
-└──────────┘     └──────────┘     └──────────┘     └──────────┘
-                      │                                  │
-                      ▼                                  ▼
-                 ┌──────────┐                      ┌──────────┐
-                 │ Database │                      │ External │
-                 │ (Draft)  │                      │   MTA    │
-                 └──────────┘                      └──────────┘
-                                                        │
-                                                        ▼
-                                                   ┌──────────┐
-                                                   │ Webhook  │◀─ Bounce/Delivery
-                                                   │ Service  │   notifications
-                                                   └──────────┘
+┌────────────┐     ┌────────────┐     ┌────────────┐     ┌────────────┐
+│  AI Agent  │     │  API       │     │  Queue     │     │  SES       │
+│  (Client)  │────▶│  Server    │────▶│  (BullMQ)  │────▶│  SMTP/API  │
+└────────────┘     └────────────┘     └────────────┘     └────────────┘
+      │                  │                   │                  │
+      │  POST /send      │  Validate &       │  Pick up job     │  Send via
+      │                  │  enqueue          │                  │  SES
+      ▼                  ▼                   ▼                  ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  1. Agent calls POST /messages/send with recipient, subject, body   │
+│  2. API validates, creates message record, enqueues send job        │
+│  3. Worker picks up job, calls SES API or SMTP                      │
+│  4. SES handles DKIM signing, delivery, bounces                     │
+│  5. SNS notifications update message status (delivered/bounced)     │
+└─────────────────────────────────────────────────────────────────────┘
 ```
-
-**Flow:**
-1. Client calls `POST /v0/inboxes/{inbox_id}/messages`
-2. API validates request, creates message record in DB
-3. Message enqueued for sending
-4. SMTP sender dequeues, signs (DKIM), sends via MX
-5. Delivery status updates message record
-6. Webhook fired for `message.sent` / `message.delivered` / `message.bounced`
 
 ### Receiving an Email
 
 ```
-┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
-│ External │────▶│   MX     │────▶│  Parser  │────▶│ Database │
-│  Sender  │     │ Receiver │     │ Service  │     │          │
-└──────────┘     └──────────┘     └──────────┘     └──────────┘
-                      │                │                 │
-                      ▼                ▼                 │
-                 ┌──────────┐    ┌──────────┐           │
-                 │  Spam/   │    │  Object  │           │
-                 │  Virus   │    │ Storage  │           │
-                 └──────────┘    └──────────┘           │
-                                                        ▼
-                                                   ┌──────────┐
-                                                   │ Webhook  │
-                                                   │ Service  │
-                                                   └──────────┘
-                                                        │
-                                                        ▼
-                                                   ┌──────────┐
-                                                   │  Client  │
-                                                   │ Endpoint │
-                                                   └──────────┘
+┌────────────┐     ┌────────────┐     ┌────────────┐     ┌────────────┐
+│  External  │     │  Amazon    │     │  SNS       │     │  Backend   │
+│  Sender    │────▶│  SES       │────▶│  Topic     │────▶│  Webhook   │
+└────────────┘     └────────────┘     └────────────┘     └────────────┘
+      │                  │                   │                  │
+      │  SMTP to MX      │  Receipt rule     │  HTTP POST       │  Process &
+      │                  │  matches          │                  │  store
+      ▼                  ▼                   ▼                  ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  1. Sender's mail server looks up MX → inbound-smtp.us-east-1...   │
+│  2. SES receives email, applies receipt rules                       │
+│  3. Receipt rule publishes to SNS topic (raw email or notification) │
+│  4. SNS POSTs to backend webhook endpoint                           │
+│  5. Backend parses MIME, extracts attachments to S3, stores message │
+│  6. Backend triggers webhook to AI agent if configured              │
+└─────────────────────────────────────────────────────────────────────┘
 ```
-
-**Flow:**
-1. External server connects to MX receiver
-2. SMTP handshake, recipient validation
-3. Message received, parsed (headers, body, attachments)
-4. Spam/virus scanning
-5. Attachments stored in object storage
-6. Message record created in database
-7. Webhook fired for `message.received`
-
-### Webhook Delivery
-
-```
-┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
-│  Event   │────▶│  Queue   │────▶│ Delivery │────▶│  Client  │
-│ Trigger  │     │          │     │  Worker  │     │ Endpoint │
-└──────────┘     └──────────┘     └──────────┘     └──────────┘
-                                       │
-                                       ▼
-                                  ┌──────────┐
-                                  │  Retry   │
-                                  │  Logic   │
-                                  └──────────┘
-```
-
-**Retry Strategy:**
-- Exponential backoff: 1m, 5m, 30m, 2h, 8h
-- Max 5 retries
-- Failed webhooks logged for debugging
 
 ---
 
 ## Technology Stack
 
-### Recommended Stack
-
-| Component | Technology | Rationale |
-|-----------|------------|-----------|
-| API Server | Node.js + TypeScript + Hono | Fast, type-safe, edge-compatible |
-| Database | PostgreSQL 15+ | Reliable, full-text search, pgvector |
-| Queue | Redis + BullMQ | Simple, battle-tested, good DX |
-| Object Storage | S3/R2/MinIO | Commodity, cheap at scale |
-| SMTP Inbound | Haraka | Node.js native, pluggable |
-| SMTP Outbound | Nodemailer | Standard, well-maintained |
-| IMAP | Dovecot | Industry standard |
-| Caching | Redis | Multi-purpose (cache + queue) |
-| Search | PostgreSQL FTS + pgvector | No extra infra, semantic search |
-
-### Alternative Options
-
-| Component | Alternative | Trade-off |
-|-----------|-------------|-----------|
-| API Server | Go + Chi | Faster, more memory efficient, less ecosystem |
-| Database | CockroachDB | Distributed, higher complexity |
-| Queue | RabbitMQ | More features, more ops overhead |
-| SMTP Inbound | Postal | Full-featured, Ruby-based |
-| Search | Elasticsearch | More powerful, significant ops burden |
+| Layer | Technology |
+|-------|------------|
+| API Framework | Node.js + Hono/Express |
+| Database | PostgreSQL |
+| Cache/Queue | Redis + BullMQ |
+| Email Transport | Amazon SES |
+| Inbound Processing | AWS Lambda or webhook |
+| Event Bus | Amazon SNS |
+| Object Storage | Amazon S3 |
+| Authentication | JWT + API Keys |
 
 ---
 
 ## Database Schema
 
-### Core Tables
-
 ```sql
--- Organizations (top-level accounts)
+-- Organizations
 CREATE TABLE organizations (
-    organization_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY,
     name TEXT NOT NULL,
-    plan TEXT NOT NULL DEFAULT 'free',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- API Keys
-CREATE TABLE api_keys (
-    key_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES organizations(organization_id),
-    key_hash TEXT NOT NULL,  -- bcrypt hash of the key
-    name TEXT,
-    scopes TEXT[] NOT NULL DEFAULT '{}',
-    last_used_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- Pods (multi-tenant isolation)
-CREATE TABLE pods (
-    pod_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES organizations(organization_id),
-    name TEXT NOT NULL,
-    client_id TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(organization_id, client_id)
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Inboxes
 CREATE TABLE inboxes (
-    inbox_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    pod_id UUID NOT NULL REFERENCES pods(pod_id),
-    username TEXT NOT NULL,
-    domain TEXT NOT NULL,
+    id UUID PRIMARY KEY,
+    organization_id UUID REFERENCES organizations(id),
+    email_address TEXT UNIQUE NOT NULL,
     display_name TEXT,
-    client_id TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(username, domain),
-    UNIQUE(pod_id, client_id)
-);
-
--- Threads (email conversations)
-CREATE TABLE threads (
-    thread_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    inbox_id UUID NOT NULL REFERENCES inboxes(inbox_id) ON DELETE CASCADE,
-    subject TEXT,
-    last_message_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    message_count INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Messages
 CREATE TABLE messages (
-    message_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    inbox_id UUID NOT NULL REFERENCES inboxes(inbox_id) ON DELETE CASCADE,
-    thread_id UUID NOT NULL REFERENCES threads(thread_id) ON DELETE CASCADE,
-    direction TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+    id UUID PRIMARY KEY,
+    inbox_id UUID REFERENCES inboxes(id),
+    message_id TEXT,  -- RFC 5322 Message-ID
     from_address TEXT NOT NULL,
     to_addresses TEXT[] NOT NULL,
-    cc_addresses TEXT[] DEFAULT '{}',
-    bcc_addresses TEXT[] DEFAULT '{}',
+    cc_addresses TEXT[],
     subject TEXT,
-    text_body TEXT,
-    html_body TEXT,
-    headers JSONB DEFAULT '{}',
-    labels TEXT[] DEFAULT '{}',
-    raw_message_id TEXT,  -- Original Message-ID header
-    in_reply_to TEXT,     -- Message-ID being replied to
-    references TEXT[],    -- Thread reference chain
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    body_text TEXT,
+    body_html TEXT,
+    direction TEXT CHECK (direction IN ('inbound', 'outbound')),
+    status TEXT DEFAULT 'received',
+    ses_message_id TEXT,  -- SES tracking ID
+    received_at TIMESTAMPTZ,
+    sent_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
-
--- Full-text search index
-CREATE INDEX messages_fts_idx ON messages 
-    USING GIN (to_tsvector('english', coalesce(subject, '') || ' ' || coalesce(text_body, '')));
 
 -- Attachments
 CREATE TABLE attachments (
-    attachment_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    message_id UUID NOT NULL REFERENCES messages(message_id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY,
+    message_id UUID REFERENCES messages(id),
     filename TEXT NOT NULL,
-    content_type TEXT NOT NULL,
-    size_bytes INTEGER NOT NULL,
-    storage_key TEXT NOT NULL,  -- S3/R2 key
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- Drafts
-CREATE TABLE drafts (
-    draft_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    inbox_id UUID NOT NULL REFERENCES inboxes(inbox_id) ON DELETE CASCADE,
-    to_addresses TEXT[] DEFAULT '{}',
-    cc_addresses TEXT[] DEFAULT '{}',
-    bcc_addresses TEXT[] DEFAULT '{}',
-    subject TEXT,
-    text_body TEXT,
-    html_body TEXT,
-    send_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    content_type TEXT,
+    size_bytes INTEGER,
+    s3_key TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Webhooks
 CREATE TABLE webhooks (
-    webhook_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES organizations(organization_id),
+    id UUID PRIMARY KEY,
+    inbox_id UUID REFERENCES inboxes(id),
     url TEXT NOT NULL,
-    event_types TEXT[] NOT NULL,
-    inbox_ids UUID[] DEFAULT '{}',
-    pod_ids UUID[] DEFAULT '{}',
-    client_id TEXT,
     secret TEXT NOT NULL,
-    enabled BOOLEAN NOT NULL DEFAULT true,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(organization_id, client_id)
+    events TEXT[] DEFAULT ARRAY['message.received'],
+    active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
-
--- Domains
-CREATE TABLE domains (
-    domain_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES organizations(organization_id),
-    pod_id UUID REFERENCES pods(pod_id),
-    domain TEXT NOT NULL UNIQUE,
-    status TEXT NOT NULL DEFAULT 'pending',
-    dns_records JSONB NOT NULL DEFAULT '[]',
-    verified_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- Indexes for common queries
-CREATE INDEX inboxes_pod_id_idx ON inboxes(pod_id);
-CREATE INDEX messages_inbox_id_created_idx ON messages(inbox_id, created_at DESC);
-CREATE INDEX messages_thread_id_idx ON messages(thread_id);
-CREATE INDEX webhooks_org_id_idx ON webhooks(organization_id);
 ```
 
 ---
 
 ## Deployment Architecture
 
-### Single-Node (Development/Small Scale)
+### AWS Deployment (Recommended)
 
 ```
-┌────────────────────────────────────────────┐
-│              Single Server                  │
-│  ┌──────────────────────────────────────┐  │
-│  │           Docker Compose              │  │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ │  │
-│  │  │   API   │ │  SMTP   │ │  SMTP   │ │  │
-│  │  │ Server  │ │  Send   │ │ Receive │ │  │
-│  │  └─────────┘ └─────────┘ └─────────┘ │  │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ │  │
-│  │  │Postgres │ │  Redis  │ │  MinIO  │ │  │
-│  │  └─────────┘ └─────────┘ └─────────┘ │  │
-│  └──────────────────────────────────────┘  │
-└────────────────────────────────────────────┘
-```
-
-### Production (Kubernetes)
-
-```
-                    ┌─────────────────┐
-                    │   Load Balancer │
-                    └────────┬────────┘
-                             │
-        ┌────────────────────┼────────────────────┐
-        ▼                    ▼                    ▼
-┌───────────────┐   ┌───────────────┐   ┌───────────────┐
-│  API Server   │   │  API Server   │   │  API Server   │
-│  (Replica 1)  │   │  (Replica 2)  │   │  (Replica N)  │
-└───────────────┘   └───────────────┘   └───────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                         Route 53 / CloudFlare                       │
+│                    (DNS: MX → SES, A → ALB)                         │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+        ┌───────────────────────────┼───────────────────────────┐
+        ▼                           ▼                           ▼
+┌───────────────┐          ┌───────────────┐          ┌───────────────┐
+│  Application  │          │  Amazon SES   │          │  Amazon SNS   │
+│  Load Balancer│          │  (Email I/O)  │          │  (Events)     │
+└───────────────┘          └───────────────┘          └───────────────┘
+        │                           │                           │
+        ▼                           │                           ▼
+┌───────────────┐                   │                  ┌───────────────┐
+│   ECS/EKS     │◀──────────────────┴─────────────────▶│  Lambda       │
+│  (API + Workers)│                                    │  (Inbound)    │
+└───────────────┘                                      └───────────────┘
         │                    │                    │
         └────────────────────┼────────────────────┘
-                             │
+                             ▼
         ┌────────────────────┼────────────────────┐
         ▼                    ▼                    ▼
 ┌───────────────┐   ┌───────────────┐   ┌───────────────┐
-│   PostgreSQL  │   │     Redis     │   │   S3 / R2     │
-│   (Primary)   │   │   (Cluster)   │   │               │
+│   RDS         │   │  ElastiCache  │   │   S3          │
+│  (PostgreSQL) │   │   (Redis)     │   │ (Attachments) │
 └───────────────┘   └───────────────┘   └───────────────┘
-
-┌─────────────────────────────────────────────────────────┐
-│                    Worker Pods                           │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐      │
-│  │ SMTP Sender │  │   Webhook   │  │   Email     │      │
-│  │   Workers   │  │   Workers   │  │   Parser    │      │
-│  └─────────────┘  └─────────────┘  └─────────────┘      │
-└─────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────┐
-│                    MX Receivers                          │
-│  ┌─────────────┐  ┌─────────────┐  (behind dedicated    │
-│  │ SMTP Server │  │ SMTP Server │   IP with PTR record) │
-│  └─────────────┘  └─────────────┘                       │
-└─────────────────────────────────────────────────────────┘
 ```
 
-### DNS Configuration
+### DNS Configuration (SES-based)
 
 ```
-; MX record for receiving
-@           MX    10  mx1.openagentmail.com.
-@           MX    20  mx2.openagentmail.com.
+; MX record for receiving (points to SES)
+@           MX    10  inbound-smtp.us-east-1.amazonaws.com.
 
-; SPF for sending
-@           TXT   "v=spf1 include:spf.openagentmail.com ~all"
+; SPF for sending (authorizes SES)
+@           TXT   "v=spf1 include:amazonses.com -all"
 
-; DKIM selector
-oam._domainkey  CNAME  oam._domainkey.openagentmail.com.
+; DKIM (CNAME records from SES console)
+abcdef._domainkey  CNAME  abcdef.dkim.amazonses.com.
+ghijkl._domainkey  CNAME  ghijkl.dkim.amazonses.com.
+mnopqr._domainkey  CNAME  mnopqr.dkim.amazonses.com.
 
 ; DMARC
-_dmarc      TXT   "v=DMARC1; p=none; rua=mailto:dmarc@openagentmail.com"
+_dmarc      TXT   "v=DMARC1; p=quarantine; rua=mailto:dmarc@yourdomain.com"
 ```
 
 ---
@@ -498,68 +472,67 @@ _dmarc      TXT   "v=DMARC1; p=none; rua=mailto:dmarc@openagentmail.com"
 
 1. **API Keys** - Bearer tokens for API access
 2. **Webhook Signatures** - HMAC-SHA256 for webhook verification
-3. **IMAP/SMTP Auth** - Per-inbox credentials
+3. **IAM Roles** - AWS IAM for SES/S3/SNS access
 
 ### Data Isolation
 
 - **Organization Level** - Complete isolation between orgs
-- **Pod Level** - Logical isolation within org
 - **Inbox Level** - Per-inbox access control
+- **IAM Policies** - Least-privilege access to AWS resources
 
 ### Encryption
 
 | Data | At Rest | In Transit |
 |------|---------|------------|
 | API Keys | bcrypt hashed | TLS 1.3 |
-| Messages | AES-256 (optional) | TLS 1.3 |
-| Attachments | Server-side encryption | TLS 1.3 |
-| Webhooks | - | TLS 1.3 + HMAC |
+| Messages | RDS encryption | TLS 1.3 |
+| Attachments | S3 SSE | TLS 1.3 |
+| SES Traffic | - | TLS (STARTTLS) |
 
 ### Email Security
 
-- **SPF** - Sender Policy Framework validation
-- **DKIM** - DomainKeys Identified Mail signing
-- **DMARC** - Domain-based Message Authentication
-- **TLS** - Opportunistic TLS for SMTP
+- **SPF** - `include:amazonses.com` authorizes SES IPs
+- **DKIM** - Automatic signing by SES
+- **DMARC** - Policy enforcement for domain
+- **TLS** - SES uses opportunistic TLS for delivery
 
 ### Rate Limiting
 
 | Endpoint | Limit |
 |----------|-------|
 | API (authenticated) | 600/min |
-| SMTP outbound | 100/hour per inbox |
+| SES sending | Per-account quota (starts at 200/day in sandbox) |
 | Webhook retries | 5 attempts max |
 
 ---
 
 ## Scaling Considerations
 
-### Bottlenecks & Solutions
+### SES Limits
 
-| Bottleneck | Solution |
-|------------|----------|
-| API requests | Horizontal scaling + caching |
-| Database writes | Write-ahead logging, connection pooling |
-| Email parsing | Worker pool with autoscaling |
-| Attachment storage | CDN + pre-signed URLs |
-| Webhook delivery | Queue partitioning |
+| Limit | Sandbox | Production |
+|-------|---------|------------|
+| Daily send quota | 200 emails | 50,000+ (request increase) |
+| Max send rate | 1 email/second | 14+ emails/second |
+| Inbound email size | 30 MB | 30 MB |
+| Receipt rules | 200 per rule set | 200 per rule set |
 
 ### Capacity Planning
 
-| Scale | API Servers | DB | Redis | Workers |
-|-------|-------------|----|----|---------|
-| 1K inboxes | 2 | 1 primary | 1 | 2 |
-| 10K inboxes | 4 | 1 primary + read replica | 3 node cluster | 4 |
-| 100K inboxes | 8+ | Primary + 2 replicas | 6 node cluster | 8+ |
+| Scale | API Servers | DB | Redis | SES Quota |
+|-------|-------------|----|----|-----------|
+| 1K inboxes | 2 | 1 primary | 1 | 50K/day |
+| 10K inboxes | 4 | 1 primary + read replica | 3 node | 500K/day |
+| 100K inboxes | 8+ | Primary + 2 replicas | 6 node | 5M/day |
 
 ### Performance Targets
 
 | Metric | Target |
 |--------|--------|
 | API p99 latency | < 200ms |
-| Email send time | < 5s (queued to sent) |
+| Email send time | < 5s (queued to SES accepted) |
+| Inbound processing | < 2s from SNS to stored |
 | Webhook delivery | < 30s from event |
-| Message ingestion | < 2s from receipt |
 
 ---
 
@@ -568,18 +541,24 @@ _dmarc      TXT   "v=DMARC1; p=none; rua=mailto:dmarc@openagentmail.com"
 ### Key Metrics
 
 - API request rate, latency, error rate
-- Email send/receive rates
-- Queue depths (send, webhook)
-- Bounce/complaint rates
-- Database connection pool utilization
+- SES send/delivery/bounce rates
+- SNS message throughput
+- Queue depths (webhook delivery)
+- SES reputation metrics (bounce %, complaint %)
+
+### SES-Specific Monitoring
+
+- **CloudWatch Metrics**: Sends, deliveries, bounces, complaints
+- **SNS Notifications**: Bounce/complaint feedback loop
+- **SES Reputation Dashboard**: Account health score
 
 ### Recommended Stack
 
-- **Metrics**: Prometheus + Grafana
-- **Logging**: Structured JSON logs → Loki or CloudWatch
-- **Tracing**: OpenTelemetry → Jaeger or Honeycomb
-- **Alerts**: Grafana Alerting or PagerDuty
+- **Metrics**: CloudWatch + Prometheus + Grafana
+- **Logging**: Structured JSON logs → CloudWatch Logs
+- **Tracing**: AWS X-Ray or OpenTelemetry
+- **Alerts**: CloudWatch Alarms → SNS → PagerDuty
 
 ---
 
-*Last updated: 2024-01*
+*Last updated: 2026-03*
