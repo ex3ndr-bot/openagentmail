@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Organization(BaseModel):
@@ -53,6 +53,8 @@ class Attachment(BaseModel):
 class Message(BaseModel):
     """Email message."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     message_id: str
     inbox_id: str
     thread_id: str
@@ -67,9 +69,6 @@ class Message(BaseModel):
     labels: list[str] = []
     headers: dict[str, str] = {}
     created_at: datetime
-
-    class Config:
-        populate_by_name = True
 
 
 class Draft(BaseModel):

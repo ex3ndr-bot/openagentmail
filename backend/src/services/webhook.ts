@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { config } from '../config.js';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
@@ -36,7 +36,7 @@ class WebhookService {
       data: {
         webhookId,
         eventType: payload.type,
-        payload,
+        payload: payload as unknown as Prisma.InputJsonValue,
         status: 'pending',
       },
     });
