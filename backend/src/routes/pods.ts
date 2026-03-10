@@ -43,7 +43,7 @@ export async function podsRoutes(fastify: FastifyInstance) {
 
     const { auth } = request;
     const cursor = query.page_token ? decodeCursor(query.page_token) : null;
-    const limit = Math.min(query.limit, config.pagination.maxLimit);
+    const limit = Math.min(query.limit ?? config.pagination.defaultLimit, config.pagination.maxLimit);
 
     const pods = await prisma.pod.findMany({
       where: {
@@ -54,7 +54,7 @@ export async function podsRoutes(fastify: FastifyInstance) {
       take: limit + 1,
     });
 
-    return formatPaginatedResponse(pods, limit, formatPod);
+    return formatPaginatedResponse(pods, query.limit, formatPod);
   });
 
   // Get Pod

@@ -70,7 +70,7 @@ export async function inboxesRoutes(fastify: FastifyInstance) {
 
     const { auth } = request;
     const cursor = query.page_token ? decodeCursor(query.page_token) : null;
-    const limit = Math.min(query.limit, config.pagination.maxLimit);
+    const limit = Math.min(query.limit ?? config.pagination.defaultLimit, config.pagination.maxLimit);
 
     // Build where clause based on key type
     const where: any = {
@@ -88,7 +88,7 @@ export async function inboxesRoutes(fastify: FastifyInstance) {
       take: limit + 1,
     });
 
-    return formatPaginatedResponse(inboxes, limit, formatInbox);
+    return formatPaginatedResponse(inboxes, query.limit, formatInbox);
   });
 
   // Get Inbox
