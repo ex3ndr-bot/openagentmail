@@ -95,7 +95,7 @@ export async function messagesRoutes(fastify: FastifyInstance) {
     }
 
     const cursor = query.page_token ? decodeCursor(query.page_token) : null;
-    const limit = Math.min(query.limit, config.pagination.maxLimit);
+    const limit = Math.min(query.limit ?? config.pagination.defaultLimit, config.pagination.maxLimit);
 
     const where: any = {
       inboxId: inbox_id,
@@ -113,7 +113,7 @@ export async function messagesRoutes(fastify: FastifyInstance) {
       take: limit + 1,
     });
 
-    return formatPaginatedResponse(messages, limit, formatMessage);
+    return formatPaginatedResponse(messages, query.limit, formatMessage);
   });
 
   // Get Message

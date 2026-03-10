@@ -51,7 +51,7 @@ export async function draftsRoutes(fastify: FastifyInstance) {
     }
 
     const cursor = query.page_token ? decodeCursor(query.page_token) : null;
-    const limit = Math.min(query.limit, config.pagination.maxLimit);
+    const limit = Math.min(query.limit ?? config.pagination.defaultLimit, config.pagination.maxLimit);
 
     const drafts = await prisma.draft.findMany({
       where: {
@@ -63,7 +63,7 @@ export async function draftsRoutes(fastify: FastifyInstance) {
       take: limit + 1,
     });
 
-    return formatPaginatedResponse(drafts, limit, formatDraft);
+    return formatPaginatedResponse(drafts, query.limit, formatDraft);
   });
 
   // Get Draft

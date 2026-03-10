@@ -78,7 +78,7 @@ export async function webhooksRoutes(fastify: FastifyInstance) {
 
     const { auth } = request;
     const cursor = query.page_token ? decodeCursor(query.page_token) : null;
-    const limit = Math.min(query.limit, config.pagination.maxLimit);
+    const limit = Math.min(query.limit ?? config.pagination.defaultLimit, config.pagination.maxLimit);
 
     const where: any = {
       organizationId: auth.organizationId,
@@ -95,7 +95,7 @@ export async function webhooksRoutes(fastify: FastifyInstance) {
       take: limit + 1,
     });
 
-    return formatPaginatedResponse(webhooks, limit, formatWebhook);
+    return formatPaginatedResponse(webhooks, query.limit, formatWebhook);
   });
 
   // Get Webhook

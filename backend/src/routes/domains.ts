@@ -3,7 +3,6 @@ import { prisma, createApiError, canAccessPod } from '../middleware/auth.js';
 import { validate, createDomainSchema, paginationSchema } from '../middleware/validation.js';
 import { formatPaginatedResponse, decodeCursor } from '../services/pagination.js';
 import { config } from '../config.js';
-import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 
 export async function domainsRoutes(fastify: FastifyInstance) {
@@ -78,7 +77,7 @@ export async function domainsRoutes(fastify: FastifyInstance) {
 
     const { auth } = request;
     const cursor = query.page_token ? decodeCursor(query.page_token) : null;
-    const limit = Math.min(query.limit, config.pagination.maxLimit);
+    const limit = Math.min(query.limit ?? config.pagination.defaultLimit, config.pagination.maxLimit);
 
     const where: any = {
       organizationId: auth.organizationId,
@@ -95,7 +94,7 @@ export async function domainsRoutes(fastify: FastifyInstance) {
       take: limit + 1,
     });
 
-    return formatPaginatedResponse(domains, limit, formatDomain);
+    return formatPaginatedResponse(domains, query.limit, formatDomain);
   });
 
   // Get Domain
